@@ -73,16 +73,13 @@ class PyCurlHttpAdapter(PyCurlBaseAdapter):
         verify=True,
         cert=None,
         proxies=None,
-        **kwargs
+        **kwargs,
     ) -> None:
         if stream:
             raise NotImplementedError("stream not supported")
 
         if cert:
             raise NotImplementedError("cert not supported")
-
-        if proxies:
-            raise NotImplementedError("proxies not supported")
 
         pycurl_request = PyCurlRequest(
             request, curl=self.curl, timeout=timeout, **kwargs
@@ -99,13 +96,15 @@ class PyCurlRequest:
         curl=None,
         timeout=None,
         allow_redirects=True,
-        max_redirects=-1
+        max_redirects=-1,
+        proxies=None,
     ):
         self.prepared = prepared
         self.curl = curl or pycurl.Curl()
         self.timeout = timeout
         self.allow_redirects = allow_redirects
         self.max_redirects = max_redirects
+        self.proxies = proxies if proxies else {}
 
         if timeout is not None:
             if isinstance(timeout, (int, float)):
@@ -184,6 +183,14 @@ class PyCurlRequest:
 
         # Automatically decompress downloads
         self.curl.setopt(pycurl.ACCEPT_ENCODING, "")
+
+        if self.proxies:
+            if self.proxies.get("https", None):
+                self.curl.setopt(pycurl.PROXYTYPE, pycurl.PROXYTYPE_HTTPS)
+                self.curl.setopt(pycurl.PROXY, self.proxies.get("https", None))
+            if self.proxies.get("http", None):
+                self.curl.setopt(pycurl.PROXYTYPE, pycurl.PROXYTYPE_HTTP)
+                self.curl.setopt(pycurl.PROXY, self.proxies.get("https", None))
 
         # HTTP server authentication
         self._prepare_http_auth()

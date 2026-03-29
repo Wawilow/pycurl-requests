@@ -2,18 +2,20 @@ from collections import OrderedDict
 from typing import Generator, Optional
 
 import pycurl
-from pycurl_requests import adapters
+import os
 
-from pycurl_requests.auth import HTTPBasicAuth, CurlAuth
+from pycurl_requests import adapters, structures
+from pycurl_requests.auth import CurlAuth, HTTPBasicAuth
 from pycurl_requests.cookies import RequestsCookieJar
 from pycurl_requests.exceptions import InvalidSchema
 from pycurl_requests.models import (
-    Request,
-    PreparedRequest,
-    Response,
     DEFAULT_REDIRECT_LIMIT,
+    PreparedRequest,
+    Request,
+    Response,
 )
-from pycurl_requests import structures
+
+from .utils import Mapping, to_key_val_list, get_environ_proxies
 
 
 # Stubbed out for Requests tests
@@ -129,9 +131,66 @@ class Session:
     def get_redirect_target(self, resp: Response) -> Optional[str]:
         raise NotImplementedError
 
+
+def merge_setting(request_setting, session_setting, dict_class=OrderedDict):
+    """Determines appropriate setting for a given request, taking into account
+    the explicit setting on that request, and the setting in the session. If a
+    setting is a dictionary, they will be merged together using `dict_class`
+    """
+
+    if session_setting is None:
+        return request_setting
+
+    if request_setting is None:
+        return session_setting
+
+    # Bypass if not a dictionary (e.g. verify)
+    if not (
+        isinstance(session_setting, Mapping) and isinstance(request_setting, Mapping)
+    ):
+        return request_setting
+
+    merged_setting = dict_class(to_key_val_list(session_setting))
+    merged_setting.update(to_key_val_list(request_setting))
+
+    # Remove keys that are set to None. Extract keys first to avoid altering
+    # the dictionary during iteration.
+    none_keys = [k for (k, v) in merged_setting.items() if v is None]
+    for key in none_keys:
+        del merged_setting[key]
+
+    return merged_setting
+
     def merge_environment_settings(self, url, proxies, stream, verify, cert) -> dict:
-        # TODO: Read settings from environment
-        return {}
+        """
+        Check the environment and merge it with some settings.
+
+        :rtype: dict
+        """
+        # Gather clues from the surrounding environment.
+        if self.trust_env:
+            # Set environment's proxies.
+            no_proxy = proxies.get("no_proxy") if proxies is not None else None
+            env_proxies = get_environ_proxies(url, no_proxy=no_proxy)
+            for k, v in env_proxies.items():
+                proxies.setdefault(k, v)
+
+            # Look for requests environment configuration
+            # and be compatible with cURL.
+            if verify is True or verify is None:
+                verify = (
+                    os.environ.get("REQUESTS_CA_BUNDLE")
+                    or os.environ.get("CURL_CA_BUNDLE")
+                    or verify
+                )
+
+        # Merge all the kwargs.
+        proxies = merge_setting(proxies, self.proxies)
+        stream = merge_setting(stream, self.stream)
+        verify = merge_setting(verify, self.verify)
+        cert = merge_setting(cert, self.cert)
+
+        return {"proxies": proxies, "stream": stream, "verify": verify, "cert": cert}
 
     def mount(self, prefix, adapter):
         """
