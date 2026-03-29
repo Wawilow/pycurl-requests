@@ -185,6 +185,9 @@ class PyCurlRequest:
         self.curl.setopt(pycurl.ACCEPT_ENCODING, "")
 
         if self.proxies:
+            # TODO: proxy environment variables
+            # libcurl respects the proxy environment variables named http_proxy, ftp_proxy, sftp_proxy etc
+            # Make sure the logic works the same as the original requests library, if not add some sort of warnings?
             if self.proxies.get("https", None):
                 self.curl.setopt(pycurl.PROXYTYPE, pycurl.PROXYTYPE_HTTPS)
                 self.curl.setopt(pycurl.PROXY, self.proxies.get("https", None))

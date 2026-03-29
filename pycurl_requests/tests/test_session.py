@@ -6,6 +6,7 @@ the tests for the tests for `api` (which itself is just a thin wrapper around a
 single-use Session).
 """
 
+import os
 import pycurl
 import pytest
 
@@ -63,3 +64,29 @@ def test_session_cookies(http_server, cookies_):
         response = s.get(http_server.base_url + "/cookies", cookies=cookies_)
 
     assert response.text == "a: Fizz\nb: Buzz\nc: Boo"
+
+
+PYTEST_PROXY = os.getenv("PYTEST_PROXY", None)
+
+
+@pytest.mark.skipif(
+    (not PYTEST_PROXY),
+    reason="Skip, PYTEST_PROXY environment variable is not set",
+)
+def test_proxy(http_server):
+    origin_response = requests.get("https://httpbin.org/ip", timeout=10)
+    origin_response.raise_for_status()
+    origin_ip = origin_response.json().get("origin")
+
+    proxy_response = requests.get(
+        "https://httpbin.org/ip",
+        proxies={"http": PYTEST_PROXY, "https": PYTEST_PROXY},
+        timeout=10,
+    )
+    proxy_response.raise_for_status()
+    proxy_ip = proxy_response.json().get("origin")
+
+    assert isinstance(origin_response, requests.Response)
+    assert isinstance(proxy_response, requests.Response)
+    # TODO: this is not the best way to test proxy. Ideally test should look for other params that imply the proxy is bieng used
+    assert origin_ip != proxy_ip, f"Proxy failed: IP is still {origin_ip}"
